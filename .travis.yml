@@ -5,9 +5,7 @@ cache:
 node_js:
   - "9"
   - "8"
-  - "7"
   - "6"
-  - "4"
 sudo: required
 services:
   - docker

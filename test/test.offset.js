@@ -4,6 +4,7 @@ var libPath = process.env['kafka-cov'] ? '../lib-cov/' : '../lib/';
 var Producer = require(libPath + 'producer');
 var Offset = require(libPath + 'offset');
 var Client = require(libPath + 'client');
+var ConsumerGroup = require(libPath + 'consumerGroup');
 const uuid = require('uuid');
 
 var client, producer, offset;
@@ -16,6 +17,7 @@ describe('Offset', function () {
     producer = new Producer(client);
     producer.on('ready', function () {
       producer.createTopics(['_exist_topic_3_test'], true, function (err) {
+        console.log(`GOT AN ERROR CREATING TOPIC: ${JSON.stringify(err)}`);
         done(err);
       });
     });
@@ -30,9 +32,11 @@ describe('Offset', function () {
   describe('#fetch', function () {
     it('should return offset of the topics', function (done) {
       var topic = '_exist_topic_3_test';
-      var topics = [ { topic: topic } ];
+      var topics = [{ topic: topic }];
       offset.fetch(topics, function (err, data) {
         var offsets = data[topic][0];
+        console.log(`OFFSET FETCH LOG data: ${JSON.stringify(data)}`);
+        console.log(`OFFSET FETCH LOG err: ${err}`);
         offsets.should.be.an.instanceOf(Array);
         offsets.length.should.equal(1);
         done(err);
@@ -41,7 +45,7 @@ describe('Offset', function () {
 
     it('should return earliest offset of the topics', function (done) {
       var topic = '_exist_topic_3_test';
-      var topics = [ { topic: topic, time: -2 } ];
+      var topics = [{ topic: topic, time: -2 }];
       offset.fetch(topics, function (err, data) {
         var offsets = data[topic][0];
         offsets.should.be.an.instanceOf(Array);
@@ -52,7 +56,7 @@ describe('Offset', function () {
 
     it('should return latest offset of the topics', function (done) {
       var topic = '_exist_topic_3_test';
-      var topics = [ { topic: topic, time: -1 } ];
+      var topics = [{ topic: topic, time: -1 }];
       offset.fetch(topics, function (err, data) {
         var offsets = data[topic][0];
         offsets.should.be.an.instanceOf(Array);
@@ -63,7 +67,7 @@ describe('Offset', function () {
 
     it('should keeping calling fetch until offset is ready', function (done) {
       var topic = '_exist_topic_3_test';
-      var topics = [ { topic: topic } ];
+      var topics = [{ topic: topic }];
       offset.fetch(topics, done);
     });
   });
@@ -71,7 +75,7 @@ describe('Offset', function () {
   describe('#commit', function () {
     it('should commit successfully', function (done) {
       var topic = '_exist_topic_3_test';
-      var topics = [ { topic: topic, offset: 10 } ];
+      var topics = [{ topic: topic, offset: 10 }];
       offset.commit('_groupId_commit_test', topics, function (err, data) {
         data.should.be.ok;
         Object.keys(data)[0].should.equal(topic);
@@ -81,7 +85,7 @@ describe('Offset', function () {
 
     it('should keep calling commit until offset is ready', function (done) {
       var topic = '_exist_topic_3_test';
-      var topics = [ { topic: topic, offset: 10 } ];
+      var topics = [{ topic: topic, offset: 10 }];
       offset.commit('_groupId_commit_test', topics, done);
     });
   });
@@ -89,7 +93,7 @@ describe('Offset', function () {
   describe('#fetchCommits', function () {
     it('should get last committed offset of the consumer group', function (done) {
       var topic = '_exist_topic_3_test';
-      var topics = [ { topic: topic, offset: 10 } ];
+      var topics = [{ topic: topic, offset: 10 }];
       offset.fetchCommits('_groupId_commit_1_test', topics, function (err, data) {
         data.should.be.ok;
         Object.keys(data)[0].should.equal(topic);
@@ -100,8 +104,51 @@ describe('Offset', function () {
 
     it('should keep calling fetchCommits until offset is ready', function (done) {
       var topic = '_exist_topic_3_test';
-      var topics = [ { topic: topic, offset: 10 } ];
+      var topics = [{ topic: topic, offset: 10 }];
       offset.fetchCommits('_groupId_commit_1_test', topics, done);
+    });
+  });
+
+  describe('#fetchCommitsV1', function () {
+    var topic = '_exist_topic_3_test';
+    var topics = [{ topic: topic }];
+    var groupId = '_groupId_commit_v1_1_test';
+    it('should return -1 when the consumer group has no commits on the broker', function (done) {
+      offset.fetchCommitsV1(groupId, topics, function (err, data) {
+        console.log(`fetchCommtsV1 data!!! ${JSON.stringify(data)}`);
+        console.log(`fetchCommtsV1 err ${JSON.stringify(err)}`);
+        data.should.be.ok;
+        Object.keys(data)[0].should.equal(topic);
+        data[topic][0].should.equal(-1);
+        done(err);
+      });
+    });
+
+    it('should get the last committed offset consumer group on the broker', function (done) {
+      var consumerGroupOptions = {
+        groupId: groupId,
+        kafkaHost: host
+      };
+      var consumerGroup = new ConsumerGroup(consumerGroupOptions);
+      consumerGroup.on('message', () => {
+        offset.fetchCommitsV1(groupId, topics, function (err, data) {
+          console.log(`fetchCommtsV1 data!!! ${JSON.stringify(data)}`);
+          console.log(`fetchCommtsV1 err ${JSON.stringify(err)}`);
+          data.should.be.ok;
+          Object.keys(data)[0].should.equal(topic);
+          data[topic][0].should.equal(1);
+          consumerGroup.close(true, () => {
+            done(err);
+          });
+        });
+      });
+      producer.send({ topic, messages: ['firstMessage'] }, () => { console.log('sent message'); });
+    });
+
+    it('should keep calling fetchCommits until offset is ready', function (done) {
+      var topic = '_exist_topic_3_test';
+      var topics = [{ topic: topic, offset: 10 }];
+      offset.fetchCommitsV1('_groupId_commit_1_test', topics, done);
     });
   });
 
@@ -128,7 +175,7 @@ describe('Offset', function () {
       var topic = '_exist_topic_3_test';
       var topics = [topic];
       var partition = 0;
-      offset.fetch([{topic: topic, time: -1}], function (err, results) {
+      offset.fetch([{ topic: topic, time: -1 }], function (err, results) {
         if (err) return done(err);
         var latestOffset = results[topic][partition][0];
         offset.fetchLatestOffsets(topics, function (err, offsets) {

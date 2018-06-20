@@ -110,10 +110,10 @@ describe('Offset', function () {
   });
 
   describe('#fetchCommitsV1', function () {
-    var topic = '_exist_topic_3_test';
-    var topics = [{ topic: topic }];
-    var groupId = '_groupId_commit_v1_1_test';
     it('should return -1 when the consumer group has no commits on the broker', function (done) {
+      var topic = '_exist_topic_3_test';
+      var topics = [{ topic: topic }];
+      var groupId = '_groupId_commit_v1_1_test';
       offset.fetchCommitsV1(groupId, topics, function (err, data) {
         console.log(`fetchCommtsV1 data!!! ${JSON.stringify(data)}`);
         console.log(`fetchCommtsV1 err ${JSON.stringify(err)}`);
@@ -125,24 +125,46 @@ describe('Offset', function () {
     });
 
     it('should get the last committed offset consumer group on the broker', function (done) {
+      var topic = `_exist_topic_3_test`;
+      var topics = [{ topic: topic }];
+      var groupId = `_groupId_commit_v1_1_test-${uuid.v4()}`;
       var consumerGroupOptions = {
         groupId: groupId,
-        kafkaHost: host
+        fromOffset: 'earliest',
+        kafkaHost: 'localhost:9092',
+        autoCommit: true
       };
-      var consumerGroup = new ConsumerGroup(consumerGroupOptions);
-      consumerGroup.on('message', () => {
-        offset.fetchCommitsV1(groupId, topics, function (err, data) {
-          console.log(`fetchCommtsV1 data!!! ${JSON.stringify(data)}`);
-          console.log(`fetchCommtsV1 err ${JSON.stringify(err)}`);
-          data.should.be.ok;
-          Object.keys(data)[0].should.equal(topic);
-          data[topic][0].should.equal(1);
-          consumerGroup.close(true, () => {
-            done(err);
+      var consumerGroup = new ConsumerGroup(consumerGroupOptions, topic);
+      console.log(`consumer group options: ${consumerGroupOptions}`);
+      consumerGroup.pause();
+      console.log(`TOPICS ARE: ${JSON.stringify(topics, null, 2)}`);
+      consumerGroup.on('message', (message) => {
+        console.log(`Got a message on the consumer group: ${JSON.stringify(message)}`);
+        consumerGroup.close(true, (err, data) => {
+          console.log(`consumer closed manually : ${data}, err: ${err}`);
+          offset.fetchCommitsV1(groupId, topics, function (err, data) {
+            console.log(`AFTER COMMIT MESSAGE fetchCommtsV1 data!!! ${JSON.stringify(data)}`);
+            console.log(`AFTER COMMIT MESSAGE fetchCommtsV1 err ${JSON.stringify(err)}`);
+            data.should.be.ok;
+            Object.keys(data)[0].should.equal(topic);
+            data[topic][0].should.equal(1);
+            consumerGroup.close(true, () => {
+              done(err);
+            });
           });
         });
       });
-      producer.send({ topic, messages: ['firstMessage'] }, () => { console.log('sent message'); });
+      consumerGroup.on('error', (err) => {
+        console.log(`ERROR ON CONSUMER GROUP: ${JSON.stringify(err)}`);
+      });
+      consumerGroup.on('offsetOutOfRange', (payload) => {
+        console.log(`There was an offsetOutOfRange for ${JSON.stringify(payload)}`);
+      });
+
+      // producer.createTopics([topic], true, function (err, result) {
+        // console.log(`Tried to create topic: ${result}, err: ${err}`);
+      producer.send([{ topic, messages: ['firstMessage'] }], (err, data) => { consumerGroup.resume(); console.log(`Producer sent data: ${JSON.stringify(data)}, err: ${JSON.stringify(err)}`); });
+      // });
     });
 
     it('should keep calling fetchCommits until offset is ready', function (done) {

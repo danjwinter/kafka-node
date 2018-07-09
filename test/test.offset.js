@@ -168,7 +168,7 @@ describe('Offset', function () {
       var topic = '_exist_topic_3_test';
       var topics = [topic];
       var partition = 0;
-      offset.fetch([{ topic: topic, time: -1 }], function (err, results) {
+      offset.fetch([{topic: topic, time: -1}], function (err, results) {
         if (err) return done(err);
         var latestOffset = results[topic][partition][0];
         offset.fetchLatestOffsets(topics, function (err, offsets) {
